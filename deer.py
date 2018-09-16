@@ -6,16 +6,129 @@ mapSizeX = 1024
 mapSizeY = 1024
 seaLevel = 100  # Уровень океана
 snowLevel = 180  # Уровень снега
+dryLevel = 120  # Уровень снега
+tMin = -20
+tMax = 50
 
 class Map:
     """Создание карты мира"""
     def __init__(self):
         octaves = 30
         freq = 16.0 * octaves
-        self.m = np.zeros((mapSizeX,mapSizeY), dtype=int)
+        self.h = np.zeros((mapSizeX,mapSizeY), dtype=int)
+        self.dr = np.zeros((mapSizeX,mapSizeY), dtype=int)
+        self.t = np.zeros((mapSizeX,mapSizeY), dtype=int)
+        # Создаем карту высот и влажности, температурный градиент
         for y in range(mapSizeY):
         	for x in range(mapSizeX):
-        		self.m[x,y] = int(snoise2(x / freq, y / freq, octaves) * 127.0 + 128.0)
+        		self.h[x,y] = int(snoise2(x / freq, y / freq, octaves) * 127.0 + 128.0)
+        		self.dr[x,y] = 1 if self.h[x,y] > dryLevel else 0
+        		self.t[x,y] =(tMax-tMin)*(y/mapSizeY)+tMin + (128-self.h[x,y])/127 * 10
+
+        # Создаем карту лесов
+        self.f = np.zeros((mapSizeX,mapSizeY), dtype=int)
+        octaves = 6
+        freq = 16.0 * octaves
+        for y in range(mapSizeY):
+        	for x in range(mapSizeX):
+        		self.f[x,y] = 200 if int(snoise2(x / freq, y / freq, octaves) * 127.0 + 128.0)>140 else 0
+
+
+# По параметрам влажности, температуры и высоты определяем тип ландшафта
+
+    def blockType(self,x,y):
+        h = int(middle(self.h,x,y))
+        t = int(middle(self.t,x,y))
+        vl = 1 if middle(self.dr,x,y) < 0.5 else 0
+        f = 0 if int(middle(self.f,x,y))<100 else 1
+        t1 = 1 # определяем низкая температура (0) средняя (1) или высокая (2)
+        if t < 5:
+            t1 = 0
+        if t > 30:
+            t1 = 2
+
+        h1 = 0;
+        if h<= seaLevel-20:     # глубокое море
+            h1 = 0
+        elif h<= seaLevel:      # вода
+            h1 = 1
+        elif h<= seaLevel+30:   # низко
+            h1 = 2
+        elif h <  snowLevel - 20:   # равнина
+            h1 = 3
+        elif h <  snowLevel:    # прегорья
+            h1 = 4
+        elif h <  snowLevel+20: # гора
+            h1 = 5
+        else:                   # вершина горы
+            h1 = 6
+
+        r = [
+            [[[7,7,7],[7,7,7]], # нет леса # глубокое море
+            [[7,7,7],[7,7,7]]], # лес # глубокое море
+            [[[6,6,6],[6,6,6]], # нет леса # вода
+            [[6,6,6],[6,6,6]]], # лес # вода
+            [[[],[]], # нет леса # низко
+            [[],[]]], # лес # низко
+            [[[],[]], # нет леса # равнина
+            [[],[]]], # лес  # равнина
+            [[[],[]], # нет леса # прегорья
+            [[],[]]], # лес   # прегорья
+            [[[],[]], # нет леса # гора
+            [[],[]]], # лес # гора
+            [[[5,5,5],[5,5,5]], # нет леса # вершина горы
+            [[5,5,5],[5,5,5]]], # лес # вершина горы
+        ]
+
+
+        # t1 = 0 # определяем низкая температура (-1) средняя (0) или высокая (1)
+        # if t < 5:
+        #     t1 = -1
+        # if t > 30:
+        #     t1 = 1
+        #
+        # if h<= seaLevel-20: # уровень глубокого моря
+        #     return 7
+        # if h<= seaLevel: # уровень моря
+        #     return 6
+        # if h >= snowLevel+20: # вершина горы
+        #     return 5
+        # if h >= snowLevel: # гора
+        #     return 4 if f > 100 else 5
+        # if h >= snowLevel - 20: # прегорья
+        #     if f > 100: # прегорья с лесом
+        #         if dr > 0.5: # Сухо
+        #             if t1 == -1 : # [холодно]
+        #                 return 24 #!!!!!!!!!!!!!!!!!!! пока тут закончили
+        #             elif t1 == 0: # [нормально]
+        #                 return 0
+        #             else:         # [жарко]
+        #                 return 0
+        #
+        #         else: # Влажно
+        #             if t1 == -1 : # [холодно]
+        #                 return 0
+        #             elif t1 == 0: # [нормально]
+        #                 return 0
+        #             else:         # [жарко]
+        #                 return 0
+        #     else: # предгорья без леса
+        #         if dr > 0.5: # Сухо
+        #             if t1 == -1 : # [холодно]
+        #                 return 0
+        #             elif t1 == 0: # [нормально]
+        #                 return 0
+        #             else:         # [жарко]
+        #                 return 0
+        #
+        #         else: # Влажно
+        #             if t1 == -1 : # [холодно]
+        #                 return 0
+        #             elif t1 == 0: # [нормально]
+        #                 return 0
+        #             else:         # [жарко]
+        #                 return 0
+
 
     def showMap(self):
         filename = "111.ppm"
@@ -23,7 +136,7 @@ class Map:
         f. write(bytearray('P6\n'+str(mapSizeX)+' '+str(mapSizeY)+'\n255\n','utf-8'))
         for y in range(mapSizeY):
             for x in range(mapSizeX):
-                v = self.m[x,y]
+                v = self.h[x,y]
                 if v <= seaLevel:
                     if v <= seaLevel-20:
                         f.write(bytearray([0, 0, 70]))
@@ -35,7 +148,34 @@ class Map:
                     else:
                         f.write(bytearray([200, 200, 200]))
                 else:
-                    f.write(bytearray([v, 0, 0]))
+                    if self.f[x,y] < 200:
+                        f.write(bytearray([245, 245, 0]))
+                    else:
+                        f.write(bytearray([0, 220, 0]))
+        f.close()
+    def showMapTemp(self):
+        filename = "222.ppm"
+        f = open(filename, 'wb')
+        f. write(bytearray('P6\n'+str(mapSizeX)+' '+str(mapSizeY)+'\n255\n','utf-8'))
+        for y in range(mapSizeY):
+            for x in range(mapSizeX):
+                v = self.t[x,y]
+                vh = self.h[x,y]
+
+                if vh <= seaLevel:
+                    if vh <= seaLevel-20:
+                        f.write(bytearray([0, 0, 70]))
+                    else:
+                        f.write(bytearray([0, 0, 140]))
+                else:
+                        if v<0:
+                            c = int(v/tMin*(240-50)+50) # tMin<0
+                            c = 255 if c>255 else c
+                            f.write(bytearray([c, c, c]))
+                        else:
+                            c = int(v/tMax*(240-50)+50)
+                            c = 255 if c>255 else c
+                            f.write(bytearray([c, c, 0]))
         f.close()
 
 
@@ -92,4 +232,5 @@ class Wolf(Animal):
 
 m = Map()
 m.showMap()
+m.showMapTemp()
 print("Done")
